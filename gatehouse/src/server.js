@@ -1,15 +1,15 @@
 const express = require("express");
 const session = require("express-session");
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const { SESv2Client, SendEmailCommand } = require("@aws-sdk/client-sesv2");
 const createPuzzle = require("node-puzzle");
 const fs = require("fs");
 const path = require("path");
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
-const SMTP_URL = String(process.env.SMTP_URL || "").trim();
-const SMTP_ENABLED = Boolean(SMTP_URL);
+const SES_REGION = String(process.env.SES_REGION || "").trim();
+const SES_ENABLED = Boolean(SES_REGION);
 const MAIL_FROM = String(process.env.MAIL_FROM || "").trim();
 const ALLOWED_EMAIL = String(process.env.ALLOWED_EMAIL || "").trim().toLowerCase();
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("base64url");
@@ -43,17 +43,17 @@ app.use(
 );
 
 // --- startup: validate mail configuration ---
-if (SMTP_ENABLED && !MAIL_FROM) {
-    throw new Error("MAIL_FROM is required when SMTP_URL is set");
+if (SES_ENABLED && !MAIL_FROM) {
+    throw new Error("MAIL_FROM is required when SES_REGION is set");
 }
-if (SMTP_ENABLED && !ALLOWED_EMAIL) {
-    throw new Error("ALLOWED_EMAIL is required when SMTP_URL is set");
+if (SES_ENABLED && !ALLOWED_EMAIL) {
+    throw new Error("ALLOWED_EMAIL is required when SES_REGION is set");
 }
 if (!fs.existsSync(CHALLENGE_IMAGE_PATH)) {
     throw new Error(`Challenge image missing: ${CHALLENGE_IMAGE_PATH}`);
 }
-const mailer = SMTP_ENABLED ? nodemailer.createTransport(SMTP_URL) : null;
-console.log(`Gatehouse mail: ${SMTP_ENABLED ? "smtp" : "stdout"}`);
+const sesClient = SES_ENABLED ? new SESv2Client({ region: SES_REGION }) : null;
+console.log(`Gatehouse mail: ${SES_ENABLED ? "ses" : "stdout"}`);
 
 // --- helpers ---
 app.use((req, res, next) => {
@@ -98,18 +98,28 @@ function renderLoginStep(req, res, error = null, status = 200) {
 }
 
 async function sendCode(email, code) {
-    if (!SMTP_ENABLED) {
+    if (!SES_ENABLED) {
         console.log(`GATEHOUSE_EMAIL_CODE email=${email} code=${code}`);
         return;
     }
     console.log(`GATEHOUSE_EMAIL_SEND_START to=${email}`);
-    const info = await mailer.sendMail({
-        from: MAIL_FROM,
-        to: email,
-        subject: "Your Gatehouse verification code",
-        text: `Your Gatehouse verification code is ${code}. It expires in 10 minutes.`,
-    });
-    console.log(`GATEHOUSE_EMAIL_SEND_ACCEPTED to=${email} messageId=${info.messageId || "unknown"}`);
+    const info = await sesClient.send(
+        new SendEmailCommand({
+            FromEmailAddress: MAIL_FROM,
+            Destination: { ToAddresses: [email] },
+            Content: {
+                Simple: {
+                    Subject: { Data: "Your Gatehouse verification code" },
+                    Body: {
+                        Text: {
+                            Data: `Your Gatehouse verification code is ${code}. It expires in 10 minutes.`,
+                        },
+                    },
+                },
+            },
+        })
+    );
+    console.log(`GATEHOUSE_EMAIL_SEND_ACCEPTED to=${email} messageId=${info.MessageId || "unknown"}`);
 }
 
 async function issueChallenge(sessionData) {

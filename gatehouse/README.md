@@ -31,20 +31,18 @@ Docker assigns an available host port and `make up` prints the URL. Use
 ## Email Delivery
 
 Without a local `.env`, Gatehouse prints verification codes to the
-container logs.
+container logs. Cloud runs deliver through Amazon SES.
 
-For a real email run, put SMTP settings in `gatehouse/.env`. Keep this
-file local; it contains SMTP credentials.
+For an SES run, put these settings in `gatehouse/.env`:
 
 ```dotenv
-SMTP_URL=smtps://sender%40example.com:URL_ENCODED_PASSWORD@smtp.example.com:465
-MAIL_FROM="Gatehouse <sender@example.com>"
+SES_REGION=us-east-1
+MAIL_FROM=gatehouse@example.com
 ALLOWED_EMAIL=recipient@example.com
 ```
 
-Initialize `.env` from `env.example`. Replace only the sender and
-URL-encoded SMTP password. When `SMTP_URL` is set, `MAIL_FROM` and
-`ALLOWED_EMAIL` are required so Gatehouse only sends to the allowed inbox.
+SES uses ambient AWS credentials. `MAIL_FROM` and `ALLOWED_EMAIL` are
+required so Gatehouse only sends to the allowed inbox.
 
 ```sh
 make up
@@ -53,23 +51,22 @@ make up
 Use the Gatehouse URL and `ALLOWED_EMAIL` as the test recipient. The
 verification code must come from that account's real inbox.
 
-For SMTP debugging, watch the container logs:
+For email debugging, watch the container logs:
 
 ```sh
 docker compose logs -f gatehouse
 ```
 
-When `SMTP_URL` is set, the app logs `GATEHOUSE_EMAIL_SEND_START` before
-handing the message to SMTP and `GATEHOUSE_EMAIL_SEND_ACCEPTED` after
-the SMTP server accepts it. It does not print verification codes in that
-mode.
+The app logs `GATEHOUSE_EMAIL_SEND_START` before delivery and
+`GATEHOUSE_EMAIL_SEND_ACCEPTED` after SES accepts the message. It does
+not print verification codes in SES mode.
 
 ## EC2 Run
 
 Use `infra/` for a temporary cloud run. Terraform deploys Gatehouse on a
 disposable EC2 instance behind an HTTPS Application Load Balancer. The
 load balancer accepts traffic only from the configured source CIDR, EC2
-access uses SSM instead of SSH, and SMTP configuration is stored in
-Secrets Manager.
+access uses SSM instead of SSH, and the instance role sends through an
+existing SES identity.
 
 Terraform state is local, gitignored, and disposable.

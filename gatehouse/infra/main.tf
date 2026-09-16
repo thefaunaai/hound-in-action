@@ -22,8 +22,11 @@ provider "aws" {
 locals {
   hosted_zone_name = trimsuffix(lower(trimspace(var.hosted_zone_name)), ".")
   hostname         = trimsuffix(lower(trimspace(var.hostname)), ".")
+  mail_from        = "gatehouse@${local.hosted_zone_name}"
   name             = "gatehouse-target"
 }
+
+data "aws_caller_identity" "current" {}
 
 data "aws_vpc" "default" {
   default = true
@@ -43,17 +46,6 @@ data "aws_subnets" "default" {
 
 data "aws_ssm_parameter" "al2023_x86_64" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
-
-resource "aws_secretsmanager_secret" "smtp" {
-  name = "gatehouse/smtp"
-
-  recovery_window_in_days = 0
-}
-
-resource "aws_secretsmanager_secret_version" "smtp" {
-  secret_id     = aws_secretsmanager_secret.smtp.id
-  secret_string = jsonencode(var.smtp_config)
 }
 
 resource "aws_security_group" "gatehouse" {
@@ -84,15 +76,6 @@ resource "aws_vpc_security_group_egress_rule" "https" {
   description       = "HTTPS for AWS APIs, packages, git, Docker Hub"
 }
 
-resource "aws_vpc_security_group_egress_rule" "smtp" {
-  security_group_id = aws_security_group.gatehouse.id
-  cidr_ipv4         = "0.0.0.0/0"
-  from_port         = 465
-  to_port           = 465
-  ip_protocol       = "tcp"
-  description       = "SMTP delivery"
-}
-
 resource "aws_iam_role" "gatehouse" {
   name = local.name
 
@@ -113,16 +96,24 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-resource "aws_iam_role_policy" "smtp_secret" {
-  name = "${local.name}-smtp-secret"
+resource "aws_iam_role_policy" "email_sender" {
+  name = "${local.name}-email-sender"
   role = aws_iam_role.gatehouse.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = aws_secretsmanager_secret.smtp.arn
+      Action   = ["ses:SendEmail"]
+      Resource = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${local.hosted_zone_name}"
+      Condition = {
+        StringEquals = {
+          "ses:FromAddress" = local.mail_from
+        }
+        "ForAllValues:StringEquals" = {
+          "ses:Recipients" = [var.allowed_email]
+        }
+      }
     }]
   })
 }
@@ -144,7 +135,7 @@ resource "aws_instance" "gatehouse" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_put_response_hop_limit = 2
   }
 
   root_block_device {
@@ -156,7 +147,7 @@ resource "aws_instance" "gatehouse" {
   user_data_base64 = base64encode(templatefile("${path.module}/user_data.sh.tftpl", {
     allowed_email = var.allowed_email
     aws_region    = var.aws_region
-    secret_name   = aws_secretsmanager_secret.smtp.name
+    mail_from     = local.mail_from
     source_branch = var.source_branch
   }))
 
@@ -165,9 +156,8 @@ resource "aws_instance" "gatehouse" {
   }
 
   depends_on = [
-    aws_iam_role_policy.smtp_secret,
+    aws_iam_role_policy.email_sender,
     aws_iam_role_policy_attachment.ssm,
-    aws_secretsmanager_secret_version.smtp,
   ]
 }
 

@@ -54,20 +54,3 @@ variable "allowed_email" {
     error_message = "allowed_email must be one concrete email address."
   }
 }
-
-variable "smtp_config" {
-  description = "Gatehouse SMTP runtime config. Stored in local Terraform state until destroy."
-  type = object({
-    SMTP_URL  = string
-    MAIL_FROM = string
-  })
-  sensitive = true
-
-  validation {
-    condition = (
-      length(trimspace(var.smtp_config.SMTP_URL)) > 0 &&
-      length(trimspace(var.smtp_config.MAIL_FROM)) > 0
-    )
-    error_message = "smtp_config must contain SMTP_URL and MAIL_FROM."
-  }
-}

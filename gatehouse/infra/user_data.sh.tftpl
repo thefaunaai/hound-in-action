@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-umask 077
 
 dnf install -y docker git
 systemctl start docker
@@ -8,31 +7,13 @@ systemctl start docker
 git clone --depth 1 --branch "${source_branch}" https://github.com/thefaunaai/hound-in-action.git /opt/gatehouse
 cd /opt/gatehouse/gatehouse
 
-aws secretsmanager get-secret-value \
-  --secret-id "${secret_name}" \
-  --region "${aws_region}" \
-  --query SecretString \
-  --output text | python3 -c '
-import json
-import sys
-
-secret = json.load(sys.stdin)
-required = ("SMTP_URL", "MAIL_FROM")
-missing = [key for key in required if not secret.get(key)]
-if missing:
-    raise SystemExit("missing secret keys: " + ", ".join(missing))
-for key in required:
-    print(f"{key}={secret[key]}")
-' > .env
-
-chmod 0600 .env
-printf 'ALLOWED_EMAIL=%s\n' "${allowed_email}" >> .env
-
 docker build -t gatehouse .
 docker run \
   --detach \
   --name gatehouse \
-  --env-file .env \
+  --env SES_REGION="${aws_region}" \
+  --env MAIL_FROM="${mail_from}" \
+  --env ALLOWED_EMAIL="${allowed_email}" \
   --env PORT=3000 \
   --publish 3000:3000 \
   gatehouse

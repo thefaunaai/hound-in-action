@@ -11,11 +11,11 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1133.0",
     "ejs": "^3.1.10",
     "express": "^4.21.1",
     "express-session": "^1.18.1",
     "node-puzzle": "^2.0.2",
-    "nodemailer": "^8.0.7",
     "slider-captcha-js": "^1.0.8"
   }
 }

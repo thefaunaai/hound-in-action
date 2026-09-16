@@ -3,8 +3,3 @@ hostname         = "gatehouse.example.com"
 
 allowed_ingress_cidr = "203.0.113.10/32"
 allowed_email        = "recipient@example.com"
-
-smtp_config = {
-  SMTP_URL  = "smtps://sender%40example.com:URL_ENCODED_PASSWORD@smtp.example.com:465"
-  MAIL_FROM = "Gatehouse <sender@example.com>"
-}
