@@ -240,7 +240,12 @@ app.post("/login/challenge", (req, res) => {
         return res.status(409).json({ ok: false, error: "wrong step" });
     }
     const error = verifyChallengeAttempt(req.session, req.body || {});
-    if (error) return res.status(400).json({ ok: false, error });
+    if (error) {
+        const trailPoints = Array.isArray(req.body?.trail) ? req.body.trail.length : "invalid";
+        const delta = Math.round(Math.abs(Number(req.body?.x) - Number(req.session.challenge?.targetX)));
+        console.warn(`GATEHOUSE_CHALLENGE_REJECTED reason=${JSON.stringify(error)} durationMs=${Number(req.body?.duration)} trailPoints=${trailPoints} coordinateDeltaPx=${delta}`);
+        return res.status(400).json({ ok: false, error });
+    }
     Object.assign(req.session, { state: STATES.AUTHENTICATED, challenge: null });
     res.json({ ok: true });
 });
